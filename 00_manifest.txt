@@ -1,0 +1,12 @@
+# TNEA Cutoff Explorer Project Files
+=================================
+This folder contains text versions of the most important project files.
+
+## Files included:
+1. App.tsx - Main application router
+2. MarkEntryForm.tsx - Form component for entering marks
+3. Results.tsx - Results page showing matching colleges
+4. routes.ts - Server API endpoints
+5. storage.ts - Data storage implementation
+6. schema.ts - Data model definitions
+7. package.json - Project dependencies

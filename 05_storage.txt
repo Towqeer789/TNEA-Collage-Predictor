@@ -1,0 +1,442 @@
+import { 
+  type User, 
+  type InsertUser, 
+  type College, 
+  type InsertCollege, 
+  type Department, 
+  type InsertDepartment, 
+  type Category, 
+  type InsertCategory, 
+  type Cutoff, 
+  type InsertCutoff,
+  type CutoffWithDetails
+} from "@shared/schema";
+
+// Storage interface
+export interface IStorage {
+  // User methods
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  
+  // College methods
+  getColleges(): Promise<College[]>;
+  getCollege(id: number): Promise<College | undefined>;
+  getCollegeByCode(code: string): Promise<College | undefined>;
+  createCollege(college: InsertCollege): Promise<College>;
+  
+  // Department methods
+  getDepartments(): Promise<Department[]>;
+  getDepartment(id: number): Promise<Department | undefined>;
+  getDepartmentByCode(code: string): Promise<Department | undefined>;
+  createDepartment(department: InsertDepartment): Promise<Department>;
+  
+  // Category methods
+  getCategories(): Promise<Category[]>;
+  getCategory(id: number): Promise<Category | undefined>;
+  getCategoryByCode(code: string): Promise<Category | undefined>;
+  createCategory(category: InsertCategory): Promise<Category>;
+  
+  // Cutoff methods
+  getCutoffs(filters?: {
+    year?: number;
+    collegeId?: number;
+    departmentId?: number;
+    categoryId?: number;
+    minCutoff?: number;
+  }): Promise<Cutoff[]>;
+  getCutoffsWithDetails(filters?: {
+    year?: number;
+    collegeId?: number;
+    departmentId?: number;
+    categoryId?: number;
+    minCutoff?: number;
+    searchQuery?: string;
+  }): Promise<CutoffWithDetails[]>;
+  getCutoff(id: number): Promise<Cutoff | undefined>;
+  createCutoff(cutoff: InsertCutoff): Promise<Cutoff>;
+  bulkCreateCutoffs(cutoffs: InsertCutoff[]): Promise<number>;
+  
+  // Statistics methods
+  getYears(): Promise<number[]>;
+  getStatsByCriteria(criteria: string): Promise<any[]>;
+}
+
+// In-memory implementation
+export class MemStorage implements IStorage {
+  private users: Map<number, User>;
+  private colleges: Map<number, College>;
+  private departments: Map<number, Department>;
+  private categories: Map<number, Category>;
+  private cutoffs: Map<number, Cutoff>;
+  
+  private userCurrentId: number;
+  private collegeCurrentId: number;
+  private departmentCurrentId: number;
+  private categoryCurrentId: number;
+  private cutoffCurrentId: number;
+
+  constructor() {
+    this.users = new Map();
+    this.colleges = new Map();
+    this.departments = new Map();
+    this.categories = new Map();
+    this.cutoffs = new Map();
+    
+    this.userCurrentId = 1;
+    this.collegeCurrentId = 1;
+    this.departmentCurrentId = 1;
+    this.categoryCurrentId = 1;
+    this.cutoffCurrentId = 1;
+    
+    // Initialize with default categories
+    this.initializeDefaultData();
+  }
+
+  private initializeDefaultData() {
+    // Add default categories
+    const defaultCategories: InsertCategory[] = [
+      { name: "Open Category", code: "OC", description: "General candidates" },
+      { name: "Backward Class", code: "BC", description: "Backward Classes" },
+      { name: "Most Backward Class", code: "MBC", description: "Most Backward Classes" },
+      { name: "Scheduled Caste", code: "SC", description: "Scheduled Castes" },
+      { name: "Scheduled Tribe", code: "ST", description: "Scheduled Tribes" }
+    ];
+    
+    defaultCategories.forEach(category => this.createCategory(category));
+    
+    // Add some common departments
+    const defaultDepartments: InsertDepartment[] = [
+      { name: "Computer Science and Engineering", code: "CSE", shortName: "Computer Science" },
+      { name: "Electronics and Communication Engineering", code: "ECE", shortName: "Electronics & Communication" },
+      { name: "Mechanical Engineering", code: "MECH", shortName: "Mechanical" },
+      { name: "Civil Engineering", code: "CIVIL", shortName: "Civil" },
+      { name: "Electrical and Electronics Engineering", code: "EEE", shortName: "Electrical" },
+      { name: "Information Technology", code: "IT", shortName: "IT" }
+    ];
+    
+    defaultDepartments.forEach(dept => this.createDepartment(dept));
+    
+    // Add some sample colleges
+    const defaultColleges: InsertCollege[] = [
+      { 
+        name: "Anna University", 
+        code: "1001", 
+        location: "Chennai", 
+        establishedYear: 1978, 
+        naacGrade: "A++", 
+        nirfRank: 8, 
+        website: "https://www.annauniv.edu" 
+      },
+      { 
+        name: "College of Engineering, Guindy", 
+        code: "1002", 
+        location: "Chennai", 
+        establishedYear: 1794, 
+        naacGrade: "A++", 
+        nirfRank: 6, 
+        website: "https://www.ceg.edu.in" 
+      },
+      { 
+        name: "PSG College of Technology", 
+        code: "1003", 
+        location: "Coimbatore", 
+        establishedYear: 1951, 
+        naacGrade: "A+", 
+        nirfRank: 15, 
+        website: "https://www.psgtech.edu" 
+      }
+    ];
+    
+    defaultColleges.forEach(college => this.createCollege(college));
+  }
+
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username === username,
+    );
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = this.userCurrentId++;
+    const user: User = { ...insertUser, id };
+    this.users.set(id, user);
+    return user;
+  }
+  
+  // College methods
+  async getColleges(): Promise<College[]> {
+    return Array.from(this.colleges.values());
+  }
+  
+  async getCollege(id: number): Promise<College | undefined> {
+    return this.colleges.get(id);
+  }
+  
+  async getCollegeByCode(code: string): Promise<College | undefined> {
+    return Array.from(this.colleges.values()).find(
+      (college) => college.code === code,
+    );
+  }
+  
+  async createCollege(insertCollege: InsertCollege): Promise<College> {
+    const id = this.collegeCurrentId++;
+    const college: College = { 
+      id,
+      code: insertCollege.code,
+      name: insertCollege.name,
+      location: insertCollege.location ?? null,
+      establishedYear: insertCollege.establishedYear ?? null,
+      naacGrade: insertCollege.naacGrade ?? null,
+      nirfRank: insertCollege.nirfRank ?? null,
+      website: insertCollege.website ?? null
+    };
+    this.colleges.set(id, college);
+    return college;
+  }
+  
+  // Department methods
+  async getDepartments(): Promise<Department[]> {
+    return Array.from(this.departments.values());
+  }
+  
+  async getDepartment(id: number): Promise<Department | undefined> {
+    return this.departments.get(id);
+  }
+  
+  async getDepartmentByCode(code: string): Promise<Department | undefined> {
+    return Array.from(this.departments.values()).find(
+      (department) => department.code === code,
+    );
+  }
+  
+  async createDepartment(insertDepartment: InsertDepartment): Promise<Department> {
+    const id = this.departmentCurrentId++;
+    const department: Department = { 
+      id,
+      code: insertDepartment.code,
+      name: insertDepartment.name,
+      shortName: insertDepartment.shortName ?? null
+    };
+    this.departments.set(id, department);
+    return department;
+  }
+  
+  // Category methods
+  async getCategories(): Promise<Category[]> {
+    return Array.from(this.categories.values());
+  }
+  
+  async getCategory(id: number): Promise<Category | undefined> {
+    return this.categories.get(id);
+  }
+  
+  async getCategoryByCode(code: string): Promise<Category | undefined> {
+    return Array.from(this.categories.values()).find(
+      (category) => category.code === code,
+    );
+  }
+  
+  async createCategory(insertCategory: InsertCategory): Promise<Category> {
+    const id = this.categoryCurrentId++;
+    const category: Category = { 
+      id,
+      code: insertCategory.code,
+      name: insertCategory.name,
+      description: insertCategory.description ?? null
+    };
+    this.categories.set(id, category);
+    return category;
+  }
+  
+  // Cutoff methods
+  async getCutoffs(filters?: {
+    year?: number;
+    collegeId?: number;
+    departmentId?: number;
+    categoryId?: number;
+    minCutoff?: number;
+  }): Promise<Cutoff[]> {
+    let cutoffs = Array.from(this.cutoffs.values());
+    
+    if (filters) {
+      if (filters.year !== undefined) {
+        cutoffs = cutoffs.filter(c => c.year === filters.year);
+      }
+      
+      if (filters.collegeId !== undefined) {
+        cutoffs = cutoffs.filter(c => c.collegeId === filters.collegeId);
+      }
+      
+      if (filters.departmentId !== undefined) {
+        cutoffs = cutoffs.filter(c => c.departmentId === filters.departmentId);
+      }
+      
+      if (filters.categoryId !== undefined) {
+        cutoffs = cutoffs.filter(c => c.categoryId === filters.categoryId);
+      }
+      
+      if (filters.minCutoff !== undefined) {
+        cutoffs = cutoffs.filter(c => c.cutoffMark >= filters.minCutoff);
+      }
+    }
+    
+    return cutoffs;
+  }
+  
+  async getCutoffsWithDetails(filters?: {
+    year?: number;
+    collegeId?: number;
+    departmentId?: number;
+    categoryId?: number;
+    minCutoff?: number;
+    searchQuery?: string;
+  }): Promise<CutoffWithDetails[]> {
+    // First get cutoffs based on filters
+    let cutoffs = Array.from(this.cutoffs.values());
+    
+    // Apply filters
+    if (filters) {
+      if (filters.year !== undefined) {
+        cutoffs = cutoffs.filter(c => c.year === filters.year);
+      }
+      
+      if (filters.collegeId !== undefined) {
+        cutoffs = cutoffs.filter(c => c.collegeId === filters.collegeId);
+      }
+      
+      if (filters.departmentId !== undefined && filters.departmentId !== 0) {
+        cutoffs = cutoffs.filter(c => c.departmentId === filters.departmentId);
+      }
+      
+      if (filters.categoryId !== undefined && filters.categoryId !== 0) {
+        cutoffs = cutoffs.filter(c => c.categoryId === filters.categoryId);
+      }
+      
+      // Filter by minCutoff - important for the mark entry feature
+      // Student MUST have marks greater than or equal to the cutoff to qualify
+      if (filters.minCutoff !== undefined) {
+        cutoffs = cutoffs.filter(c => c.cutoffMark <= filters.minCutoff);
+      }
+    }
+    
+    // Convert to detailed cutoffs with college, department, and category info
+    const detailedCutoffs: CutoffWithDetails[] = [];
+    
+    for (const cutoff of cutoffs) {
+      const college = await this.getCollege(cutoff.collegeId);
+      const department = await this.getDepartment(cutoff.departmentId);
+      const category = await this.getCategory(cutoff.categoryId);
+      
+      if (!college || !department || !category) {
+        console.log(`Skipping cutoff ${cutoff.id} due to missing related entity`);
+        continue;
+      }
+      
+      detailedCutoffs.push({
+        id: cutoff.id,
+        collegeId: college.id,
+        collegeName: college.name,
+        collegeCode: college.code,
+        departmentId: department.id,
+        departmentName: department.name,
+        departmentCode: department.code,
+        categoryId: category.id,
+        categoryName: category.name,
+        categoryCode: category.code,
+        year: cutoff.year,
+        cutoffMark: cutoff.cutoffMark
+      });
+    }
+    
+    // Apply search query if provided
+    if (filters?.searchQuery) {
+      const search = filters.searchQuery.toLowerCase();
+      return detailedCutoffs.filter(cutoff => 
+        cutoff.collegeName.toLowerCase().includes(search) || 
+        cutoff.collegeCode.toLowerCase().includes(search) || 
+        cutoff.departmentName.toLowerCase().includes(search) ||
+        cutoff.departmentCode.toLowerCase().includes(search)
+      );
+    }
+    
+    // Sort by cutoff marks so highest cutoffs appear first
+    return detailedCutoffs.sort((a, b) => b.cutoffMark - a.cutoffMark);
+  }
+  
+  async getCutoff(id: number): Promise<Cutoff | undefined> {
+    return this.cutoffs.get(id);
+  }
+  
+  async createCutoff(insertCutoff: InsertCutoff): Promise<Cutoff> {
+    const id = this.cutoffCurrentId++;
+    const cutoff: Cutoff = { ...insertCutoff, id };
+    this.cutoffs.set(id, cutoff);
+    return cutoff;
+  }
+  
+  async bulkCreateCutoffs(cutoffs: InsertCutoff[]): Promise<number> {
+    let count = 0;
+    for (const cutoff of cutoffs) {
+      await this.createCutoff(cutoff);
+      count++;
+    }
+    return count;
+  }
+  
+  // Statistics methods
+  async getYears(): Promise<number[]> {
+    const years = new Set<number>();
+    this.cutoffs.forEach(cutoff => years.add(cutoff.year));
+    return Array.from(years).sort();
+  }
+  
+  async getStatsByCriteria(criteria: string): Promise<any[]> {
+    // Example implementation for "department-trends"
+    if (criteria === "department-trends") {
+      const years = await this.getYears();
+      const departments = await this.getDepartments();
+      const result = [];
+      
+      for (const department of departments) {
+        const trend = {
+          name: department.name,
+          code: department.code,
+          data: [] as { year: number, averageCutoff: number }[]
+        };
+        
+        for (const year of years) {
+          const cutoffs = await this.getCutoffs({
+            departmentId: department.id,
+            year
+          });
+          
+          if (cutoffs.length > 0) {
+            const sum = cutoffs.reduce((acc, c) => acc + c.cutoffMark, 0);
+            const avg = sum / cutoffs.length;
+            
+            trend.data.push({
+              year,
+              averageCutoff: parseFloat(avg.toFixed(2))
+            });
+          }
+        }
+        
+        if (trend.data.length > 0) {
+          result.push(trend);
+        }
+      }
+      
+      return result;
+    }
+    
+    return [];
+  }
+}
+
+export const storage = new MemStorage();

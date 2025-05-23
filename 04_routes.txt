@@ -1,0 +1,271 @@
+import type { Express, Request, Response } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { 
+  insertCutoffSchema, 
+  insertCollegeSchema, 
+  insertDepartmentSchema, 
+  insertCategorySchema,
+  excelUploadSchema,
+  type InsertCutoff
+} from "@shared/schema";
+import multer from "multer";
+import * as XLSX from "xlsx";
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Get all colleges
+  app.get("/api/colleges", async (req: Request, res: Response) => {
+    try {
+      const colleges = await storage.getColleges();
+      res.json(colleges);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Get all departments
+  app.get("/api/departments", async (req: Request, res: Response) => {
+    try {
+      const departments = await storage.getDepartments();
+      res.json(departments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Get all categories
+  app.get("/api/categories", async (req: Request, res: Response) => {
+    try {
+      const categories = await storage.getCategories();
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Get all available years
+  app.get("/api/years", async (req: Request, res: Response) => {
+    try {
+      const years = await storage.getYears();
+      res.json(years);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Get cutoffs with filtering
+  app.get("/api/cutoffs", async (req: Request, res: Response) => {
+    try {
+      const { year, collegeId, departmentId, categoryId, minCutoff, search } = req.query;
+      
+      const filters: any = {};
+      
+      if (year) filters.year = parseInt(year as string);
+      if (collegeId) filters.collegeId = parseInt(collegeId as string);
+      if (departmentId) filters.departmentId = parseInt(departmentId as string);
+      if (categoryId) filters.categoryId = parseInt(categoryId as string);
+      if (minCutoff) filters.minCutoff = parseFloat(minCutoff as string);
+      if (search) filters.searchQuery = search as string;
+      
+      const cutoffs = await storage.getCutoffsWithDetails(filters);
+      res.json(cutoffs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Get stats by criteria
+  app.get("/api/stats/:criteria", async (req: Request, res: Response) => {
+    try {
+      const { criteria } = req.params;
+      const stats = await storage.getStatsByCriteria(criteria);
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Create new college
+  app.post("/api/colleges", async (req: Request, res: Response) => {
+    try {
+      const parseResult = insertCollegeSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Invalid college data", errors: parseResult.error });
+      }
+      
+      const college = await storage.createCollege(parseResult.data);
+      res.status(201).json(college);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Create new department
+  app.post("/api/departments", async (req: Request, res: Response) => {
+    try {
+      const parseResult = insertDepartmentSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Invalid department data", errors: parseResult.error });
+      }
+      
+      const department = await storage.createDepartment(parseResult.data);
+      res.status(201).json(department);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Create new category
+  app.post("/api/categories", async (req: Request, res: Response) => {
+    try {
+      const parseResult = insertCategorySchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Invalid category data", errors: parseResult.error });
+      }
+      
+      const category = await storage.createCategory(parseResult.data);
+      res.status(201).json(category);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Create new cutoff
+  app.post("/api/cutoffs", async (req: Request, res: Response) => {
+    try {
+      const parseResult = insertCutoffSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Invalid cutoff data", errors: parseResult.error });
+      }
+      
+      const cutoff = await storage.createCutoff(parseResult.data);
+      res.status(201).json(cutoff);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Upload Excel file with cutoff data
+  app.post("/api/upload", upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const parseResult = excelUploadSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Invalid upload metadata", errors: parseResult.error });
+      }
+      
+      const { year, dataType } = parseResult.data;
+      
+      // Read the Excel file
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet);
+      
+      if (!data || data.length === 0) {
+        return res.status(400).json({ message: "No data found in the uploaded file" });
+      }
+      
+      // Process the data
+      const cutoffData: InsertCutoff[] = [];
+      const errors: string[] = [];
+      
+      for (let i = 0; i < data.length; i++) {
+        const row: any = data[i];
+        
+        try {
+          // Check if we have required fields
+          if (!row.collegeCode || !row.departmentCode || !row.categoryCode || !row.cutoffMark) {
+            errors.push(`Row ${i + 1}: Missing required fields`);
+            continue;
+          }
+          
+          // Find or create college
+          let college = await storage.getCollegeByCode(row.collegeCode);
+          if (!college && row.collegeName) {
+            college = await storage.createCollege({
+              name: row.collegeName,
+              code: row.collegeCode,
+              location: row.location || "",
+              establishedYear: row.establishedYear || null,
+              naacGrade: row.naacGrade || null,
+              nirfRank: row.nirfRank || null,
+              website: row.website || null
+            });
+          }
+          
+          if (!college) {
+            errors.push(`Row ${i + 1}: College with code ${row.collegeCode} not found`);
+            continue;
+          }
+          
+          // Find or create department
+          let department = await storage.getDepartmentByCode(row.departmentCode);
+          if (!department && row.departmentName) {
+            department = await storage.createDepartment({
+              name: row.departmentName,
+              code: row.departmentCode,
+              shortName: row.departmentShortName || null
+            });
+          }
+          
+          if (!department) {
+            errors.push(`Row ${i + 1}: Department with code ${row.departmentCode} not found`);
+            continue;
+          }
+          
+          // Find category
+          const category = await storage.getCategoryByCode(row.categoryCode);
+          if (!category) {
+            errors.push(`Row ${i + 1}: Category with code ${row.categoryCode} not found`);
+            continue;
+          }
+          
+          // Process cutoff mark
+          const cutoffMark = parseFloat(row.cutoffMark);
+          if (isNaN(cutoffMark)) {
+            errors.push(`Row ${i + 1}: Invalid cutoff mark`);
+            continue;
+          }
+          
+          cutoffData.push({
+            collegeId: college.id,
+            departmentId: department.id,
+            categoryId: category.id,
+            year: year,
+            cutoffMark: cutoffMark
+          });
+        } catch (error: any) {
+          errors.push(`Row ${i + 1}: ${error.message}`);
+        }
+      }
+      
+      // Save cutoff data
+      const savedCount = await storage.bulkCreateCutoffs(cutoffData);
+      
+      res.status(201).json({ 
+        message: `Successfully processed ${savedCount} cutoff entries`,
+        errors: errors.length > 0 ? errors : undefined,
+        totalRows: data.length,
+        successRows: savedCount,
+        errorRows: errors.length
+      });
+      
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
